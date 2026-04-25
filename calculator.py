@@ -629,8 +629,6 @@ class CalculatorWidget(FloatLayout):
         expr_txt = self.expression if self.just_computed else ""
         self._disp.set_texts(expr=expr_txt, result=text, preview=preview)
 
-    # ── ANIMATIONS ────────────────────────────────────────────────────────────
-
     def _shake(self):
         orig_x = self.x
         seq = Animation(x=orig_x + dp(10), duration=0.04) + \
@@ -639,9 +637,6 @@ class CalculatorWidget(FloatLayout):
               Animation(x=orig_x - dp(7),  duration=0.04) + \
               Animation(x=orig_x,          duration=0.04)
         seq.start(self)
-
-    # ── CONTROLS ──────────────────────────────────────────────────────────────
-
     def _toggle_deg(self):
         self.deg_mode = not self.deg_mode
         self._deg_btn.text = "DEG" if self.deg_mode else "RAD"
@@ -667,8 +662,6 @@ class CalculatorWidget(FloatLayout):
         history_log.clear()
         self._hist.refresh()
 
-    # ── KEYBOARD ──────────────────────────────────────────────────────────────
-
     def _key_down(self, window, key, scancode, codepoint, modifiers):
         if codepoint in "0123456789.+-*/()%":
             self._handle(codepoint)
@@ -679,8 +672,6 @@ class CalculatorWidget(FloatLayout):
         elif key == 27:   # Escape
             self._handle("AC")
 
-
-# ── APP ───────────────────────────────────────────────────────────────────────
 
 class CalcApp(App):
     title = "Tera Paisa Khatam"
