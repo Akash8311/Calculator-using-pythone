@@ -338,9 +338,6 @@ class DisplayPanel(RelativeLayout):
         anim.start(self._result)
         Clock.schedule_once(lambda _: setattr(self._result, "color", color), 0.2)
 
-
-# ── HISTORY PANEL ─────────────────────────────────────────────────────────────
-
 class HistoryPanel(ScrollView):
     def __init__(self, on_restore, on_clear, **kw):
         super().__init__(**kw)
@@ -356,7 +353,6 @@ class HistoryPanel(ScrollView):
 
     def refresh(self):
         self._container.clear_widgets()
-        # Clear button row
         hdr = BoxLayout(size_hint_y=None, height=dp(24))
         lbl = Label(text="HISTORY",font_name="Roboto",
                     font_size=dp(9), color=CYAN, halign="left",
