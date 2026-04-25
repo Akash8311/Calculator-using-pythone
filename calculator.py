@@ -435,7 +435,6 @@ class CalculatorWidget(FloatLayout):
         self._bg = AnimatedBG(size_hint=(1, 1))
         self.add_widget(self._bg)
 
-        # Main column
         main = BoxLayout(
             orientation="vertical",
             size_hint=(1, 1),
@@ -443,8 +442,6 @@ class CalculatorWidget(FloatLayout):
             spacing=dp(4),
         )
         self.add_widget(main)
-
-        # Title bar
         tbar = BoxLayout(size_hint_y=None, height=dp(32), spacing=dp(6))
         title_lbl = Label(
             text="Yoooo Babe",font_name="Roboto", font_size=dp(15),
@@ -461,11 +458,9 @@ class CalculatorWidget(FloatLayout):
         tbar.add_widget(self._hist_btn)
         main.add_widget(tbar)
 
-        # Display
         self._disp = DisplayPanel(size_hint=(1, None), height=dp(100))
         main.add_widget(self._disp)
 
-        # History (hidden initially)
         self._hist = HistoryPanel(
             on_restore=self._restore_hist,
             on_clear=self._clear_hist,
@@ -521,8 +516,6 @@ class CalculatorWidget(FloatLayout):
     def _upd_hist_bg(self, *_):
         self._hist_bg.pos  = self._hist.pos
         self._hist_bg.size = self._hist.size
-
-    # ── LOGIC ─────────────────────────────────────────────────────────────────
 
     def _handle(self, action):
         expr = self.expression
