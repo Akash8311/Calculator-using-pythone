@@ -388,10 +388,6 @@ class HistoryPanel(ScrollView):
             row.bind(size=row.setter("text_size"))
             row.bind(on_release=lambda _, v=val: self._on_restore(v))
             self._container.add_widget(row)
-
-
-# ── MAIN CALCULATOR ───────────────────────────────────────────────────────────
-
 class CalculatorWidget(FloatLayout):
 
     BUTTONS = [
@@ -428,10 +424,8 @@ class CalculatorWidget(FloatLayout):
         self._build()
         Window.bind(on_key_down=self._key_down)
 
-    # ── BUILD ─────────────────────────────────────────────────────────────────
 
     def _build(self):
-        # Animated background
         self._bg = AnimatedBG(size_hint=(1, 1))
         self.add_widget(self._bg)
 
