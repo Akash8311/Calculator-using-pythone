@@ -1,333 +1,613 @@
-import tkinter as tk
-from tkinter import font as tkfont
+"""
+╔══════════════════════════════════════════════════════╗
+║   ANIMATED CALCULATOR MOBILE APP — Python + Kivy     ║
+║   Features: Particle FX · Glow Buttons · Ripples     ║
+║   Trig · History · DEG/RAD · Animated Background     ║
+╚══════════════════════════════════════════════════════╝
+
+Requirements:
+    pip install kivy
+
+Run:
+    python calculator_app.py
+"""
+
 import math
 import re
+import random
+import os
 
-# ── Colour palette ──────────────────────────────────────────────────────────
-BG          = "#0d0f1a"
-PANEL       = "#151827"
-DISPLAY_BG  = "#0a0c16"
-ACCENT      = "#7c3aed"        # violet
-ACCENT2     = "#06b6d4"        # cyan
-BTN_DARK    = "#1e2235"
-BTN_MID     = "#252a40"
-BTN_OP      = "#2d1f4e"        # operator – violet tint
-BTN_EQ      = "#4c1d95"        # equals – deep violet
-BTN_FN      = "#0e2a35"        # functions – cyan tint
-BTN_CLR     = "#3b0f0f"        # clear – red tint
-TEXT_WHITE  = "#f0f4ff"
-TEXT_DIM    = "#6b7280"
-TEXT_ACCENT = "#a78bfa"
-TEXT_CYAN   = "#67e8f9"
-TEXT_RED    = "#f87171"
+os.environ.setdefault("KIVY_NO_ENV_CONFIG", "1")
+os.environ.setdefault("DISPLAY", ":0")
 
-HOVER_LIFT  = 10               # brightness boost on hover
+from kivy.config import Config
+Config.set("graphics", "width",  "400")
+Config.set("graphics", "height", "800")
+Config.set("graphics", "resizable", "0")
+Config.set("input", "mouse", "mouse,multitouch_on_demand")
 
-# ── History ─────────────────────────────────────────────────────────────────
-history: list[str] = []
+from kivy.app import App
+from kivy.uix.widget import Widget
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.label import Label
+from kivy.uix.button import Button
+from kivy.uix.scrollview import ScrollView
+from kivy.graphics import (
+    Color, Rectangle, RoundedRectangle, Ellipse,
+    Line, Canvas, PushMatrix, PopMatrix, Scale, Translate,
+)
+from kivy.animation import Animation
+from kivy.clock import Clock
+from kivy.core.window import Window
+from kivy.metrics import dp
+from kivy.properties import (
+    StringProperty, ListProperty, BooleanProperty, NumericProperty,
+)
+from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.relativelayout import RelativeLayout
+
+# ── PALETTE ──────────────────────────────────────────────────────────────────
+BG          = (0.04, 0.05, 0.09, 1)
+DISP_BG     = (0.03, 0.04, 0.08, 1)
+ACCENT      = (0.49, 0.23, 0.93, 1)
+ACCENT2     = (0.02, 0.71, 0.83, 1)
+BTN_DARK    = (0.10, 0.12, 0.19, 1)
+BTN_MID     = (0.12, 0.14, 0.22, 1)
+BTN_OP      = (0.12, 0.09, 0.25, 1)
+BTN_EQ_A    = (0.30, 0.11, 0.58, 1)
+BTN_EQ_B    = (0.49, 0.23, 0.93, 1)
+BTN_FN      = (0.03, 0.09, 0.13, 1)
+BTN_CLR     = (0.10, 0.03, 0.03, 1)
+WHITE       = (0.94, 0.96, 1.00, 1)
+DIM         = (0.42, 0.44, 0.50, 1)
+CYAN        = (0.40, 0.91, 0.97, 1)
+PURPLE_LT   = (0.65, 0.55, 0.98, 1)
+RED         = (0.97, 0.44, 0.44, 1)
+GREEN       = (0.29, 0.86, 0.50, 1)
+
+GLOW_CYCLE  = [ACCENT, (0.58,0.20,0.92,1), ACCENT2, (0.53,0.33,0.98,1)]
+
+history_log = []
+
+# ── HELPERS ───────────────────────────────────────────────────────────────────
+
+def lerp_color(c1, c2, t):
+    return tuple(c1[i] + (c2[i] - c1[i]) * t for i in range(4))
+
+def lighten(c, amt=0.15):
+    return tuple(min(1.0, c[i] + amt) if i < 3 else c[3] for i in range(4))
 
 
-# ── Helper – lighten a hex colour ───────────────────────────────────────────
-def lighten(hex_color: str, amount: int = HOVER_LIFT) -> str:
-    hex_color = hex_color.lstrip("#")
-    r, g, b = (int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-    r, g, b = min(255, r+amount), min(255, g+amount), min(255, b+amount)
-    return f"#{r:02x}{g:02x}{b:02x}"
+# ── ANIMATED BACKGROUND ───────────────────────────────────────────────────────
+
+class AnimatedBG(Widget):
+    """Draws drifting plasma orbs + floating particles on a dark canvas."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self._orbs = [self._new_orb() for _ in range(6)]
+        self._dots = []
+        self._frame = 0
+        Clock.schedule_interval(self._tick, 1 / 30)
+
+    def _new_orb(self):
+        return {
+            "x": random.uniform(0, 400),
+            "y": random.uniform(0, 800),
+            "r": random.uniform(80, 160),
+            "vx": random.uniform(-0.6, 0.6),
+            "vy": random.uniform(-0.6, 0.6),
+            "hue": random.choice(["purple", "cyan"]),
+            "phase": random.uniform(0, math.pi * 2),
+        }
+
+    def _tick(self, dt):
+        self._frame += 1
+        for o in self._orbs:
+            o["x"] += o["vx"]
+            o["y"] += o["vy"]
+            if o["x"] < -o["r"] or o["x"] > self.width + o["r"]:
+                o["vx"] *= -1
+            if o["y"] < -o["r"] or o["y"] > self.height + o["r"]:
+                o["vy"] *= -1
+
+        if self._frame % 5 == 0 and len(self._dots) < 60:
+            self._dots.append({
+                "x": random.uniform(0, self.width),
+                "y": -5,
+                "vx": random.uniform(-0.3, 0.3),
+                "vy": random.uniform(0.4, 1.2),
+                "life": 1.0,
+                "size": random.uniform(1.5, 3.5),
+                "col": random.choice([ACCENT, PURPLE_LT, CYAN]),
+            })
+
+        alive = []
+        for d in self._dots:
+            d["x"] += d["vx"]
+            d["y"] += d["vy"]
+            d["life"] -= 0.008
+            if d["life"] > 0 and d["y"] < self.height + 10:
+                alive.append(d)
+        self._dots = alive
+
+        self._redraw()
+
+    def _redraw(self):
+        self.canvas.clear()
+        with self.canvas:
+            # Background
+            Color(*BG)
+            Rectangle(pos=self.pos, size=self.size)
+
+            # Grid lines
+            Color(0.49, 0.23, 0.93, 0.04)
+            step = dp(55)
+            x = 0
+            while x < self.width:
+                Line(points=[x, 0, x, self.height], width=0.5)
+                x += step
+            y = 0
+            while y < self.height:
+                Line(points=[0, y, self.width, y], width=0.5)
+                y += step
+
+            # Orbs
+            for o in self._orbs:
+                pulse = 0.04 + 0.02 * math.sin(self._frame * 0.04 + o["phase"])
+                if o["hue"] == "purple":
+                    Color(0.49, 0.23, 0.93, pulse)
+                else:
+                    Color(0.02, 0.71, 0.83, pulse)
+                r = o["r"]
+                Ellipse(pos=(o["x"] - r, o["y"] - r), size=(r * 2, r * 2))
+
+            # Floating dots
+            for d in self._dots:
+                c = d["col"]
+                Color(c[0], c[1], c[2], d["life"] * 0.7)
+                s = d["size"]
+                Ellipse(pos=(d["x"] - s / 2, d["y"] - s / 2), size=(s, s))
 
 
-# ── Round rectangle ─────────────────────────────────────────────────────────
-def round_rect(canvas, x1, y1, x2, y2, radius=12, **kw):
-    points = [
-        x1+radius, y1,  x2-radius, y1,
-        x2, y1,  x2, y1+radius,
-        x2, y2-radius,  x2, y2,
-        x2-radius, y2,  x1+radius, y2,
-        x1, y2,  x1, y2-radius,
-        x1, y1+radius,  x1, y1,
+# ── GLOW BUTTON ───────────────────────────────────────────────────────────────
+
+class GlowButton(Button):
+    """Rounded button with press animation, ripple flash, and optional glow."""
+
+    btn_color   = ListProperty([0.10, 0.12, 0.19, 1])
+    glow_color  = ListProperty([0.49, 0.23, 0.93, 0])
+    text_color  = ListProperty([0.94, 0.96, 1.00, 1])
+
+    def __init__(self, btn_bg, txt_col, glow, **kw):
+        super().__init__(**kw)
+        self.btn_color  = list(btn_bg)
+        self.text_color = list(txt_col)
+        self.glow_color = list(glow[:3]) + [0.0]
+        self._base_col  = list(btn_bg)
+        self._glow_col  = list(glow)
+        self.background_normal   = ""
+        self.background_down     = ""
+        self.background_color    = (0, 0, 0, 0)
+        self.font_name = "Roboto"
+        self.font_size  = dp(13)
+        self.bold       = True
+        self.color      = self.text_color
+        self.bind(pos=self._redraw, size=self._redraw,
+                  btn_color=self._redraw, glow_color=self._redraw)
+        self._redraw()
+
+    def _redraw(self, *_):
+        self.canvas.before.clear()
+        with self.canvas.before:
+            # Glow halo
+            ga = self.glow_color[3] if len(self.glow_color) > 3 else 0
+            if ga > 0.01:
+                gc = self._glow_col
+                Color(gc[0], gc[1], gc[2], ga * 0.35)
+                rg = dp(8)
+                RoundedRectangle(
+                    pos=(self.x - rg, self.y - rg),
+                    size=(self.width + rg * 2, self.height + rg * 2),
+                    radius=[dp(14)],
+                )
+            # Button face
+            Color(*self.btn_color)
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(10)])
+            # Top highlight streak
+            Color(1, 1, 1, 0.04)
+            RoundedRectangle(
+                pos=(self.x + dp(4), self.y + self.height * 0.55),
+                size=(self.width - dp(8), self.height * 0.38),
+                radius=[dp(8)],
+            )
+
+    def on_press(self):
+        light = lighten(self._base_col, 0.20)
+        anim = Animation(btn_color=light, duration=0.07)
+        anim.start(self)
+        # glow surge
+        anim2 = Animation(glow_color=list(self._glow_col[:3]) + [1.0], duration=0.07)
+        anim2.start(self)
+
+    def on_release(self):
+        anim = Animation(btn_color=self._base_col, duration=0.18)
+        anim.start(self)
+        anim2 = Animation(glow_color=list(self._glow_col[:3]) + [0.0], duration=0.3)
+        anim2.start(self)
+        # scale pop
+        anim3 = (
+            Animation(size_hint_y=0.88, duration=0.06) +
+            Animation(size_hint_y=1.0,  duration=0.10)
+        )
+        anim3.start(self)
+
+
+# ── DISPLAY ───────────────────────────────────────────────────────────────────
+
+class DisplayPanel(RelativeLayout):
+
+    expr_text    = StringProperty("")
+    result_text  = StringProperty("0")
+    preview_text = StringProperty("")
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self._glow_idx   = 0
+        self._border_col = list(ACCENT)
+
+        self._bg_rect  = None
+        self._border   = None
+
+        with self.canvas.before:
+            # Animated border colour
+            self._border_color_inst = Color(*ACCENT)
+            self._border_rect = RoundedRectangle(
+                pos=self.pos, size=self.size, radius=[dp(12)]
+            )
+            Color(*DISP_BG)
+            self._inner_rect = RoundedRectangle(
+                pos=(self.x + dp(2), self.y + dp(2)),
+                size=(self.width - dp(4), self.height - dp(4)),
+                radius=[dp(10)],
+            )
+
+        self.bind(pos=self._redraw, size=self._redraw)
+
+        # Labels
+        self._expr = Label(
+            text="", font_name="Roboto", font_size=dp(10),
+            color=DIM, halign="right", valign="middle", size_hint=(1, None),
+            height=dp(18), pos_hint={"x": 0, "top": 1},
+            padding=(dp(14), 0),
+        )
+        self._expr.bind(size=self._expr.setter("text_size"))
+        self.add_widget(self._expr)
+
+        self._result = Label(
+            text="0", font_name="Roboto", font_size=dp(36),
+            color=WHITE, halign="right", valign="middle",
+            size_hint=(1, None), height=dp(56),
+            pos_hint={"x": 0, "top": 0.72},
+            padding=(dp(14), 0),
+        )
+        self._result.bind(size=self._result.setter("text_size"))
+        self.add_widget(self._result)
+
+        self._preview = Label(
+            text="", font_name="Roboto", font_size=dp(11),
+            color=PURPLE_LT, halign="right", valign="middle",
+            size_hint=(1, None), height=dp(18),
+            pos_hint={"x": 0, "top": 0.34},
+            padding=(dp(14), 0),
+        )
+        self._preview.bind(size=self._preview.setter("text_size"))
+        self.add_widget(self._preview)
+
+        Clock.schedule_interval(self._pulse_border, 0.18)
+
+    def _redraw(self, *_):
+        self._border_rect.pos  = self.pos
+        self._border_rect.size = self.size
+        self._inner_rect.pos   = (self.x + dp(2), self.y + dp(2))
+        self._inner_rect.size  = (self.width - dp(4), self.height - dp(4))
+
+    def _pulse_border(self, dt):
+        col = GLOW_CYCLE[self._glow_idx % len(GLOW_CYCLE)]
+        self._border_color_inst.rgba = col
+        self._glow_idx += 1
+
+    def set_texts(self, expr="", result="0", preview=""):
+        self._expr.text    = expr
+        self._result.text  = result
+        self._preview.text = preview
+        n = len(result)
+        self._result.font_size = dp(36) if n < 10 else dp(26) if n < 16 else dp(16)
+
+    def flash(self, color=GREEN):
+        def do(dt):
+            self._result.color = color
+            Clock.schedule_once(lambda _: setattr(self._result, "color", WHITE), 0.35)
+        Clock.schedule_once(do, 0)
+
+    def roll_in(self, final_text, color=WHITE):
+        self._result.color   = CYAN
+        self._result.opacity = 0
+        anim = Animation(opacity=1, duration=0.2)
+        anim.start(self._result)
+        Clock.schedule_once(lambda _: setattr(self._result, "color", color), 0.2)
+
+
+# ── HISTORY PANEL ─────────────────────────────────────────────────────────────
+
+class HistoryPanel(ScrollView):
+    def __init__(self, on_restore, on_clear, **kw):
+        super().__init__(**kw)
+        self.do_scroll_x = False
+        self._on_restore = on_restore
+        self._on_clear   = on_clear
+        self._container  = BoxLayout(
+            orientation="vertical", size_hint_y=None, spacing=dp(2),
+            padding=[dp(10), dp(6)],
+        )
+        self._container.bind(minimum_height=self._container.setter("height"))
+        self.add_widget(self._container)
+
+    def refresh(self):
+        self._container.clear_widgets()
+        # Clear button row
+        hdr = BoxLayout(size_hint_y=None, height=dp(24))
+        lbl = Label(text="HISTORY",font_name="Roboto",
+                    font_size=dp(9), color=CYAN, halign="left",
+                    size_hint_x=0.7)
+        lbl.bind(size=lbl.setter("text_size"))
+        clr = Button(text="CLEAR", font_name="Roboto",
+                     font_size=dp(9), color=DIM,
+                     background_normal="", background_color=(0, 0, 0, 0),
+                     size_hint_x=0.3)
+        clr.bind(on_release=lambda _: self._on_clear())
+        hdr.add_widget(lbl)
+        hdr.add_widget(clr)
+        self._container.add_widget(hdr)
+
+        if not history_log:
+            self._container.add_widget(
+                Label(text="No history yet.", font_name="Roboto",
+                      font_size=dp(9), color=DIM, size_hint_y=None, height=dp(22))
+            )
+            return
+        for entry in history_log[:12]:
+            val = entry.split("=")[-1].strip()
+            row = Button(
+                text=entry, font_name="Roboto", font_size=dp(9),
+                color=DIM, halign="right",
+                background_normal="", background_color=(0, 0, 0, 0),
+                size_hint_y=None, height=dp(20),
+            )
+            row.bind(size=row.setter("text_size"))
+            row.bind(on_release=lambda _, v=val: self._on_restore(v))
+            self._container.add_widget(row)
+
+
+# ── MAIN CALCULATOR ───────────────────────────────────────────────────────────
+
+class CalculatorWidget(FloatLayout):
+
+    BUTTONS = [
+        [("sin", BTN_FN, CYAN,     ACCENT2),  ("cos", BTN_FN, CYAN,   ACCENT2),
+         ("tan", BTN_FN, CYAN,     ACCENT2),  ("log", BTN_FN, CYAN,   ACCENT2),
+         ("ln",  BTN_FN, CYAN,     ACCENT2)],
+        [("√",   BTN_FN, CYAN,     ACCENT2),  ("x²",  BTN_FN, CYAN,   ACCENT2),
+         ("xʸ",  BTN_FN, CYAN,     ACCENT2),  ("π",   BTN_FN, CYAN,   ACCENT2),
+         ("e",   BTN_FN, CYAN,     ACCENT2)],
+        [("1/x", BTN_FN, CYAN,     ACCENT2),  ("(",   BTN_MID, WHITE, ACCENT),
+         (")",   BTN_MID, WHITE,   ACCENT),   ("%",   BTN_OP,  PURPLE_LT, ACCENT),
+         ("AC",  BTN_CLR, RED,     RED)],
+        [("7",   BTN_DARK, WHITE,  ACCENT),   ("8",   BTN_DARK, WHITE, ACCENT),
+         ("9",   BTN_DARK, WHITE,  ACCENT),   ("⌫",   BTN_MID,  RED,  RED),
+         ("÷",   BTN_OP,   PURPLE_LT, ACCENT)],
+        [("4",   BTN_DARK, WHITE,  ACCENT),   ("5",   BTN_DARK, WHITE, ACCENT),
+         ("6",   BTN_DARK, WHITE,  ACCENT),   ("+",   BTN_OP,   PURPLE_LT, ACCENT),
+         ("−",   BTN_OP,   PURPLE_LT, ACCENT)],
+        [("1",   BTN_DARK, WHITE,  ACCENT),   ("2",   BTN_DARK, WHITE, ACCENT),
+         ("3",   BTN_DARK, WHITE,  ACCENT),   ("×",   BTN_OP,   PURPLE_LT, ACCENT),
+         ("±",   BTN_MID,  WHITE, ACCENT)],
+        [("0",   BTN_DARK, WHITE,  ACCENT),   ("00",  BTN_DARK, DIM,   ACCENT),
+         (".",   BTN_MID,  WHITE,  ACCENT),   ("ANS", BTN_MID,  DIM,   ACCENT),
+         ("=",   BTN_EQ_A, WHITE,  ACCENT)],
     ]
-    return canvas.create_polygon(points, smooth=True, **kw)
 
-
-# ── Calculator App ───────────────────────────────────────────────────────────
-class Calculator(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title("Yooooo Babe")
-        self.resizable(False, False)
-        self.configure(bg=BG)
-
-        # state
-        self.expression   = ""
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.expression    = ""
         self.just_computed = False
-        self.deg_mode     = tk.BooleanVar(value=True)   # True=DEG, False=RAD
-        self.history_open = False
+        self.deg_mode      = True
+        self._hist_open    = False
 
-        self._build_ui()
-        self._bind_keys()
-        self.update_display()
+        self._build()
+        Window.bind(on_key_down=self._key_down)
 
-    # ── UI construction ──────────────────────────────────────────────────────
-    def _build_ui(self):
-        # ── Title bar ───────────────────────────────────────────────────────
-        title_bar = tk.Frame(self, bg=BG)
-        title_bar.pack(fill="x", padx=18, pady=(14, 0))
+    # ── BUILD ─────────────────────────────────────────────────────────────────
 
-        tk.Label(title_bar, text="Yooooo Babe❤️", bg=BG,
-                 fg=TEXT_ACCENT,
-                 font=("Courier New", 13, "bold")).pack(side="left")
+    def _build(self):
+        # Animated background
+        self._bg = AnimatedBG(size_hint=(1, 1))
+        self.add_widget(self._bg)
 
-        # DEG / RAD toggle
-        self.angle_btn = tk.Button(
-            title_bar, textvariable=tk.StringVar(),
-            bg=BTN_DARK, fg=TEXT_CYAN, relief="flat",
-            font=("Courier New", 9, "bold"), padx=8, pady=2,
-            cursor="hand2", bd=0, activebackground=BTN_MID,
-            activeforeground=TEXT_CYAN,
-            command=self._toggle_angle)
-        self.angle_btn.pack(side="right", padx=(4, 0))
-        self._refresh_angle_btn()
+        # Main column
+        main = BoxLayout(
+            orientation="vertical",
+            size_hint=(1, 1),
+            padding=[dp(10), dp(8)],
+            spacing=dp(4),
+        )
+        self.add_widget(main)
 
-        # History button
-        hist_btn = tk.Button(
-            title_bar, text="⏱ HIST",
-            bg=BTN_DARK, fg=TEXT_DIM, relief="flat",
-            font=("Courier New", 9, "bold"), padx=8, pady=2,
-            cursor="hand2", bd=0, activebackground=BTN_MID,
-            activeforeground=TEXT_WHITE,
-            command=self._toggle_history)
-        hist_btn.pack(side="right", padx=(0, 4))
+        # Title bar
+        tbar = BoxLayout(size_hint_y=None, height=dp(32), spacing=dp(6))
+        title_lbl = Label(
+            text="Yoooo Babe",font_name="Roboto", font_size=dp(15),
+            bold=True, color=PURPLE_LT, halign="left", size_hint_x=0.4,
+        )
+        title_lbl.bind(size=title_lbl.setter("text_size"))
+        tbar.add_widget(title_lbl)
 
-        # ── Display area ─────────────────────────────────────────────────────
-        disp_frame = tk.Frame(self, bg=DISPLAY_BG,
-                               highlightbackground=ACCENT,
-                               highlightthickness=1)
-        disp_frame.pack(fill="x", padx=14, pady=10)
+        self._deg_btn = self._small_btn("DEG", CYAN, self._toggle_deg)
+        self._hist_btn = self._small_btn("HIST", DIM, self._toggle_hist)
+        spacer = Widget()
+        tbar.add_widget(spacer)
+        tbar.add_widget(self._deg_btn)
+        tbar.add_widget(self._hist_btn)
+        main.add_widget(tbar)
 
-        # expression label (small, top-right)
-        self.expr_label = tk.Label(
-            disp_frame, text="", bg=DISPLAY_BG, fg=TEXT_DIM,
-            font=("Courier New", 11), anchor="e", justify="right")
-        self.expr_label.pack(fill="x", padx=14, pady=(10, 0))
+        # Display
+        self._disp = DisplayPanel(size_hint=(1, None), height=dp(100))
+        main.add_widget(self._disp)
 
-        # main result label
-        self.result_label = tk.Label(
-            disp_frame, text="0", bg=DISPLAY_BG, fg=TEXT_WHITE,
-            font=("Courier New", 38, "bold"), anchor="e", justify="right")
-        self.result_label.pack(fill="x", padx=14, pady=(0, 12))
+        # History (hidden initially)
+        self._hist = HistoryPanel(
+            on_restore=self._restore_hist,
+            on_clear=self._clear_hist,
+            size_hint=(1, None), height=dp(110),
+            do_scroll_x=False,
+        )
+        with self._hist.canvas.before:
+            Color(0.05, 0.06, 0.12, 0.95)
+            self._hist_bg = RoundedRectangle(
+                pos=self._hist.pos, size=self._hist.size, radius=[dp(8)]
+            )
+        self._hist.bind(pos=self._upd_hist_bg, size=self._upd_hist_bg)
+        self._hist.opacity = 0
+        self._hist.disabled = True
+        main.add_widget(self._hist)
 
-        # live-preview of expression value
-        self.preview_label = tk.Label(
-            disp_frame, text="", bg=DISPLAY_BG, fg=TEXT_ACCENT,
-            font=("Courier New", 12), anchor="e")
-        self.preview_label.pack(fill="x", padx=14, pady=(0, 8))
+        # Button grid
+        grid = GridLayout(
+            cols=5, rows=7,
+            spacing=dp(5),
+            size_hint=(1, 1),
+        )
+        for row in self.BUTTONS:
+            for (label, bg, fg, glow) in row:
+                b = GlowButton(
+                    btn_bg=bg, txt_col=fg, glow=glow,
+                    text=label,
+                )
+                b.bind(on_release=lambda inst, l=label: self._handle(l))
+                grid.add_widget(b)
+        main.add_widget(grid)
 
-        # ── Buttons ──────────────────────────────────────────────────────────
-        btn_area = tk.Frame(self, bg=BG)
-        btn_area.pack(padx=14, pady=(0, 14))
+    def _small_btn(self, text, col, cb):
+        btn = Button(
+            text=text,font_name="Roboto", font_size=dp(9),
+            color=col, size_hint=(None, 1), width=dp(46),
+            background_normal="", background_down="",
+            background_color=(0, 0, 0, 0),
+        )
+        with btn.canvas.before:
+            Color(0.12, 0.14, 0.22, 1)
+            self._sb_rect = RoundedRectangle(
+                pos=btn.pos, size=btn.size, radius=[dp(4)]
+            )
 
-        # row definitions: (label, bg, fg, action)
-        rows = [
-            # Scientific row 1
-            [("sin",  BTN_FN, TEXT_CYAN, "sin("),
-             ("cos",  BTN_FN, TEXT_CYAN, "cos("),
-             ("tan",  BTN_FN, TEXT_CYAN, "tan("),
-             ("log",  BTN_FN, TEXT_CYAN, "log("),
-             ("ln",   BTN_FN, TEXT_CYAN, "ln(")],
-            # Scientific row 2
-            [("√",   BTN_FN, TEXT_CYAN, "sqrt("),
-             ("x²",  BTN_FN, TEXT_CYAN, "**2"),
-             ("xʸ",  BTN_FN, TEXT_CYAN, "**"),
-             ("π",   BTN_FN, TEXT_CYAN, "pi"),
-             ("e",   BTN_FN, TEXT_CYAN, "e")],
-            # Scientific row 3
-            [("1/x", BTN_FN, TEXT_CYAN, "1/"),
-             ("(",   BTN_MID, TEXT_WHITE, "("),
-             (")",   BTN_MID, TEXT_WHITE, ")"),
-             ("%",   BTN_OP,  TEXT_ACCENT, "%"),
-             ("AC",  BTN_CLR, TEXT_RED,   "AC")],
-            # Numeric rows
-            [("7", BTN_DARK, TEXT_WHITE, "7"),
-             ("8", BTN_DARK, TEXT_WHITE, "8"),
-             ("9", BTN_DARK, TEXT_WHITE, "9"),
-             ("⌫", BTN_MID,  TEXT_RED,   "BS"),
-             ("÷", BTN_OP,   TEXT_ACCENT, "/")],
-            [("4", BTN_DARK, TEXT_WHITE, "4"),
-             ("5", BTN_DARK, TEXT_WHITE, "5"),
-             ("6", BTN_DARK, TEXT_WHITE, "6"),
-             ("+", BTN_OP,   TEXT_ACCENT, "+"),
-             ("−", BTN_OP,   TEXT_ACCENT, "-")],
-            [("1", BTN_DARK, TEXT_WHITE, "1"),
-             ("2", BTN_DARK, TEXT_WHITE, "2"),
-             ("3", BTN_DARK, TEXT_WHITE, "3"),
-             ("×", BTN_OP,   TEXT_ACCENT, "*"),
-             ("±", BTN_MID,  TEXT_WHITE,  "NEG")],
-            [("0",   BTN_DARK, TEXT_WHITE, "0"),
-             ("00",  BTN_DARK, TEXT_DIM,   "00"),
-             (".",   BTN_MID,  TEXT_WHITE,  "."),
-             ("ANS", BTN_MID,  TEXT_DIM,    "ANS"),
-             ("=",   BTN_EQ,   TEXT_WHITE,  "=")],
-        ]
+        def _upd(*_):
+            self._sb_rect.pos  = btn.pos
+            self._sb_rect.size = btn.size
 
-        self._btn_refs = {}
-        for r_idx, row in enumerate(rows):
-            row_frame = tk.Frame(btn_area, bg=BG)
-            row_frame.pack(fill="x", pady=3)
-            for c_idx, (label, bg, fg, action) in enumerate(row):
-                self._make_button(row_frame, label, bg, fg, action)
-
-        # ── History panel (hidden initially) ─────────────────────────────────
-        self.hist_frame = tk.Frame(self, bg=PANEL,
-                                    highlightbackground=ACCENT2,
-                                    highlightthickness=1)
-        # not packed yet
-
-        hist_title = tk.Frame(self.hist_frame, bg=PANEL)
-        hist_title.pack(fill="x", padx=8, pady=(8, 0))
-        tk.Label(hist_title, text="HISTORY", bg=PANEL, fg=TEXT_CYAN,
-                 font=("Courier New", 10, "bold")).pack(side="left")
-        tk.Button(hist_title, text="✕ Clear", bg=PANEL, fg=TEXT_DIM,
-                  relief="flat", font=("Courier New", 9),
-                  cursor="hand2", command=self._clear_history).pack(side="right")
-
-        self.hist_list = tk.Frame(self.hist_frame, bg=PANEL)
-        self.hist_list.pack(fill="both", expand=True, padx=8, pady=8)
-
-    # ── Button factory ───────────────────────────────────────────────────────
-    def _make_button(self, parent, label, bg, fg, action):
-        btn = tk.Button(
-            parent, text=label, width=5,
-            bg=bg, fg=fg, activebackground=lighten(bg),
-            activeforeground=fg,
-            font=("Courier New", 13, "bold"),
-            relief="flat", bd=0, cursor="hand2",
-            pady=10,
-            command=lambda a=action: self._handle(a))
-        btn.pack(side="left", expand=True, fill="x", padx=3)
-        # hover effect
-        btn.bind("<Enter>", lambda e, b=btn, c=bg: b.config(bg=lighten(c, 18)))
-        btn.bind("<Leave>", lambda e, b=btn, c=bg: b.config(bg=c))
+        btn.bind(pos=_upd, size=_upd, on_release=lambda _: cb())
         return btn
 
-    # ── Keyboard bindings ─────────────────────────────────────────────────────
-    def _bind_keys(self):
-        key_map = {
-            "Return": "=", "KP_Enter": "=",
-            "BackSpace": "BS", "Delete": "AC",
-            "Escape": "AC",
-            "percent": "%",
-        }
-        for char in "0123456789.+-*/()":
-            self.bind(char, lambda e, c=char: self._handle(c))
-        for key, action in key_map.items():
-            self.bind(f"<{key}>", lambda e, a=action: self._handle(a))
+    def _upd_hist_bg(self, *_):
+        self._hist_bg.pos  = self._hist.pos
+        self._hist_bg.size = self._hist.size
 
-    # ── Core logic ────────────────────────────────────────────────────────────
-    def _handle(self, action: str):
+    # ── LOGIC ─────────────────────────────────────────────────────────────────
+
+    def _handle(self, action):
         expr = self.expression
-
         if action == "AC":
-            self.expression = ""
-            self.just_computed = False
-
-        elif action == "BS":
+            self.expression = ""; self.just_computed = False
+            self._disp.flash(RED)
+        elif action == "⌫":
             self.expression = expr[:-1]
-
         elif action == "=":
-            self._evaluate()
-            return
-
-        elif action == "NEG":
-            # wrap current expression in negation
-            if expr:
-                self.expression = f"-({expr})"
-
+            self._evaluate(); return
+        elif action == "NEG" or action == "±":
+            self.expression = f"-({expr})" if expr else "-"
         elif action == "ANS":
-            if history:
-                # grab last result (after '=')
-                last = history[-1].split("=")[-1].strip()
-                if self.just_computed:
-                    self.expression = last
-                else:
-                    self.expression += last
-
-        elif action == "pi":
-            self.expression += "π"
-
+            if history_log:
+                last = history_log[0].split("=")[-1].strip()
+                self.expression = last if self.just_computed else expr + last
+        elif action == "π":
+            self.expression = "π" if self.just_computed else expr + "π"
+            self.just_computed = False
         elif action == "e":
-            self.expression += "e"
-
-        elif action in ("sin(", "cos(", "tan(", "log(", "ln(", "sqrt("):
+            self.expression = "e" if self.just_computed else expr + "e"
+            self.just_computed = False
+        elif action == "x²":
+            self.expression += "²"; self.just_computed = False
+        elif action == "xʸ":
+            self.expression += "^"; self.just_computed = False
+        elif action == "1/x":
+            self.expression = f"1/({expr})" if (self.just_computed and expr) else expr + "1/"
+            self.just_computed = False
+        elif action in ("sin", "cos", "tan", "log", "ln", "√"):
             if self.just_computed and expr:
-                self.expression = action + expr + ")"
+                self.expression = f"{action}({expr})"
             else:
-                self.expression += action
-
-        elif action == "**2":
-            self.expression += "²"
-
-        elif action == "**":
-            self.expression += "^"
-
-        elif action == "1/":
-            if self.just_computed and expr:
-                self.expression = f"1/({expr})"
-            else:
-                self.expression += "1/"
-
+                self.expression = expr + f"{action}("
+            self.just_computed = False
         else:
-            if self.just_computed and action not in "+-*/":
+            if self.just_computed and action not in "+-×−÷/":
                 self.expression = action
             else:
                 self.expression += action
             self.just_computed = False
-
-        self.update_display()
+        self._update_display()
 
     def _evaluate(self):
-        raw = self.expression
-        if not raw:
+        if not self.expression:
             return
         try:
-            result, formatted = self._compute(raw)
-            history.append(f"{raw} = {formatted}")
-            self.expression = formatted
+            result, formatted = self._compute(self.expression)
+            history_log.insert(0, f"{self.expression} = {formatted}")
+            if len(history_log) > 20:
+                history_log.pop()
+            self._disp.set_texts(expr=self.expression, result=formatted, preview="")
+            self._disp.roll_in(formatted)
+            self._disp.flash(GREEN)
+            self.expression    = formatted
             self.just_computed = True
-            self.update_display(result_override=formatted)
-            self._refresh_history_panel()
+            if self._hist_open:
+                self._hist.refresh()
         except Exception:
-            self.result_label.config(text="Error", fg=TEXT_RED)
-            self.expression = ""
-            self.just_computed = False
+            self._shake()
+            self._disp.flash(RED)
+            self._disp.set_texts(expr="", result="Error", preview="")
+            self._disp._result.color = RED
+            self.expression = ""; self.just_computed = False
+            Clock.schedule_once(
+                lambda _: self._disp.set_texts(result="0") or
+                          setattr(self._disp._result, "color", WHITE), 0.8
+            )
 
-    def _compute(self, raw: str):
-        # pre-process display symbols → Python
+    def _compute(self, raw):
         expr = raw
-        expr = expr.replace("π", str(math.pi))
-        expr = expr.replace("e", str(math.e))
-        expr = expr.replace("²", "**2")
-        expr = expr.replace("^", "**")
-        expr = expr.replace("√", "math.sqrt")
-
-        # trig / log: respect degree mode
-        if self.deg_mode.get():
-            expr = re.sub(r'sin\(', 'math.sin(math.radians(', expr)
-            expr = re.sub(r'cos\(', 'math.cos(math.radians(', expr)
-            expr = re.sub(r'tan\(', 'math.tan(math.radians(', expr)
-            # each trig call now needs an extra closing paren
-            # we balance by appending ')' after matching
-            expr = self._balance_trig(expr)
+        expr = expr.replace("π", str(math.pi)).replace("e", str(math.e))
+        expr = expr.replace("²", "**2").replace("^", "**")
+        if self.deg_mode:
+            for fn in ("sin", "cos", "tan"):
+                expr = expr.replace(f"{fn}(", f"math.{fn}(math.radians(")
+            # close extra parens
+            expr += ")" * expr.count("math.radians(")
         else:
-            expr = expr.replace("sin(",  "math.sin(")
-            expr = expr.replace("cos(",  "math.cos(")
-            expr = expr.replace("tan(",  "math.tan(")
-
-        expr = expr.replace("log(", "math.log10(")
-        expr = expr.replace("ln(",  "math.log(")
-        expr = expr.replace("sqrt(","math.sqrt(")
-
-        result = eval(expr, {"__builtins__": {}}, {"math": math})
-
-        # format nicely
+            for fn in ("sin", "cos", "tan"):
+                expr = expr.replace(f"{fn}(", f"math.{fn}(")
+        expr = expr.replace("log(", "math.log10(").replace("ln(", "math.log(")
+        expr = expr.replace("√(", "math.sqrt(")
+        expr = expr.replace("÷", "/").replace("×", "*").replace("−", "-")
+        result = eval(expr, {"__builtins__": {}}, {"math": math})  # noqa: S307
         if isinstance(result, float):
             if result == int(result) and abs(result) < 1e15:
                 formatted = str(int(result))
@@ -337,91 +617,78 @@ class Calculator(tk.Tk):
             formatted = str(result)
         return result, formatted
 
-    def _balance_trig(self, expr: str) -> str:
-        """Add extra ')' after each trig radians( ... ) group."""
-        # We wrapped sin( → math.sin(math.radians(  so each open needs +1 close
-        # Simple approach: count added 'math.radians(' and insert ')' before each
-        # top-level closing paren following a radians group.
-        # Easier: just let the user always close their brackets and we add the
-        # extra ')' at end for each trig function used.
-        count = expr.count("math.radians(")
-        # We need to insert a ')' to close radians( for each occurrence.
-        # Strategy: replace 'math.radians(' back to a sentinel, then handle.
-        # Simplest correct approach for typical expressions:
-        # append count extra ')' at the very end.
-        expr += ")" * count
-        return expr
-
-    def update_display(self, result_override=None):
-        display = self.expression or "0"
-        # live preview
+    def _update_display(self):
+        text = self.expression or "0"
         preview = ""
         if self.expression and not self.just_computed:
             try:
-                _, val = self._compute(self.expression)
-                preview = f"= {val}"
+                _, v = self._compute(self.expression)
+                preview = f"= {v}"
             except Exception:
-                preview = ""
+                pass
+        expr_txt = self.expression if self.just_computed else ""
+        self._disp.set_texts(expr=expr_txt, result=text, preview=preview)
 
-        self.expr_label.config(text=self.expression if self.just_computed else "")
-        self.result_label.config(
-            text=result_override if result_override else display,
-            fg=TEXT_WHITE)
-        self.preview_label.config(text=preview)
+    # ── ANIMATIONS ────────────────────────────────────────────────────────────
 
-        # auto-shrink font for long numbers
-        length = len(result_override or display)
-        size = 38 if length < 10 else 28 if length < 16 else 20
-        self.result_label.config(font=("Courier New", size, "bold"))
+    def _shake(self):
+        orig_x = self.x
+        seq = Animation(x=orig_x + dp(10), duration=0.04) + \
+              Animation(x=orig_x - dp(10), duration=0.04) + \
+              Animation(x=orig_x + dp(7),  duration=0.04) + \
+              Animation(x=orig_x - dp(7),  duration=0.04) + \
+              Animation(x=orig_x,          duration=0.04)
+        seq.start(self)
 
-    # ── Angle mode toggle ─────────────────────────────────────────────────────
-    def _toggle_angle(self):
-        self.deg_mode.set(not self.deg_mode.get())
-        self._refresh_angle_btn()
+    # ── CONTROLS ──────────────────────────────────────────────────────────────
 
-    def _refresh_angle_btn(self):
-        label = "DEG" if self.deg_mode.get() else "RAD"
-        self.angle_btn.config(text=label)
+    def _toggle_deg(self):
+        self.deg_mode = not self.deg_mode
+        self._deg_btn.text = "DEG" if self.deg_mode else "RAD"
+        self._deg_btn.color = CYAN if self.deg_mode else DIM
 
-    # ── History panel ─────────────────────────────────────────────────────────
-    def _toggle_history(self):
-        if self.history_open:
-            self.hist_frame.pack_forget()
-            self.history_open = False
+    def _toggle_hist(self):
+        self._hist_open = not self._hist_open
+        if self._hist_open:
+            self._hist.refresh()
+            self._hist.opacity  = 1
+            self._hist.disabled = False
+            self._hist_btn.color = CYAN
         else:
-            self._refresh_history_panel()
-            self.hist_frame.pack(fill="x", padx=14, pady=(0, 14))
-            self.history_open = True
+            self._hist.opacity  = 0
+            self._hist.disabled = True
+            self._hist_btn.color = DIM
 
-    def _refresh_history_panel(self):
-        for w in self.hist_list.winfo_children():
-            w.destroy()
-        if not history:
-            tk.Label(self.hist_list, text="No history yet.", bg=PANEL,
-                     fg=TEXT_DIM, font=("Courier New", 10)).pack(anchor="w")
-            return
-        for entry in reversed(history[-12:]):
-            row = tk.Frame(self.hist_list, bg=PANEL)
-            row.pack(fill="x", pady=1)
-            tk.Label(row, text=entry, bg=PANEL, fg=TEXT_DIM,
-                     font=("Courier New", 10), anchor="w",
-                     cursor="hand2").pack(side="left", fill="x", expand=True)
-            # click to restore
-            lbl = row.winfo_children()[0]
-            val = entry.split("=")[-1].strip()
-            lbl.bind("<Button-1>", lambda e, v=val: self._restore(v))
+    def _restore_hist(self, val):
+        self.expression = val; self.just_computed = False
+        self._update_display()
 
-    def _restore(self, val: str):
-        self.expression = val
-        self.just_computed = False
-        self.update_display()
+    def _clear_hist(self):
+        history_log.clear()
+        self._hist.refresh()
 
-    def _clear_history(self):
-        history.clear()
-        self._refresh_history_panel()
+    # ── KEYBOARD ──────────────────────────────────────────────────────────────
+
+    def _key_down(self, window, key, scancode, codepoint, modifiers):
+        if codepoint in "0123456789.+-*/()%":
+            self._handle(codepoint)
+        elif key == 13:   # Enter
+            self._handle("=")
+        elif key == 8:    # Backspace
+            self._handle("⌫")
+        elif key == 27:   # Escape
+            self._handle("AC")
 
 
-# ── Entry point ──────────────────────────────────────────────────────────────
+# ── APP ───────────────────────────────────────────────────────────────────────
+
+class CalcApp(App):
+    title = "Tera Paisa Khatam"
+
+    def build(self):
+        Window.clearcolor = BG
+        return CalculatorWidget()
+
+
 if __name__ == "__main__":
-    app = Calculator()
-    app.mainloop()
+    CalcApp().run()
