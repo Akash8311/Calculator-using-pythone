@@ -170,9 +170,6 @@ class AnimatedBG(Widget):
                 s = d["size"]
                 Ellipse(pos=(d["x"] - s / 2, d["y"] - s / 2), size=(s, s))
 
-
-# ── GLOW BUTTON ───────────────────────────────────────────────────────────────
-
 class GlowButton(Button):
     """Rounded button with press animation, ripple flash, and optional glow."""
 
@@ -244,8 +241,6 @@ class GlowButton(Button):
         anim3.start(self)
 
 
-# ── DISPLAY ───────────────────────────────────────────────────────────────────
-
 class DisplayPanel(RelativeLayout):
 
     expr_text    = StringProperty("")
@@ -261,7 +256,6 @@ class DisplayPanel(RelativeLayout):
         self._border   = None
 
         with self.canvas.before:
-            # Animated border colour
             self._border_color_inst = Color(*ACCENT)
             self._border_rect = RoundedRectangle(
                 pos=self.pos, size=self.size, radius=[dp(12)]
